@@ -1,6 +1,6 @@
 /* 
   HERMES MODULE - Artemisa
-  Wifi-Sniffer
+  Wifi-Sniffer - library
  */
 
 #include <stdio.h>              
@@ -28,6 +28,12 @@
 #define FLAG_MORE_DATA           0x20
 #define FLAG_WEP                 0x40
 #define FLAG_ORDER               0x80
+#define extractToAndFromMask     0x03
+
+#define dtlFrames               0x00
+#define dsToClient              0x01
+#define clientToDS              0x02
+#define bridge                  0x03
 
 #define normalizeFlagToDs        0
 #define normalizeFlagFromDs      1
@@ -69,8 +75,8 @@ void extract_wep(unsigned char *payload, uint_least8_t *flagsBoolean);
 void extract_order(unsigned char *payload, uint_least8_t *flagsBoolean);
 void extract_fromDs(unsigned char *payload, uint_least8_t *flagsBoolean);
 void extract_network_name(unsigned char *payload);
-void validate_beacon();
 
+bool validate_beacon(unsigned char *subtype);
 bool is_valid_payload(int size);
 
 typedef struct __attribute__((packed)) {
@@ -90,21 +96,16 @@ typedef struct __attribute__((packed)) {
     unsigned char Type; //funion of frame (management control or data)
     unsigned char Subtype; // indicates frame purpose (?) 0000 for association , 1000 for beacon
     uint_least8_t flagsBoolean;
-    bool toDs; // indicates destination frame
-    bool fromDs; // indicates if it comes from DS
-    bool moreFragments; // if there are any following fragments
-    bool retry; // indicates if is a retranssmission TODO -> Is it important? like security-relevant I guess
-    bool powerManagement; // true -> indicates if sender goes into power-save mode 
-    bool moreData;
-    bool order; //if true, franmes must be proccessed in strict order
-    bool webEncriptyionProtocolVersion; 
 
 }  frameControl;
 
-void extract_sourceAddress();
-void extract_destinationAddress(unsigned char *payload);
-void extract_SSID();
-void extract_senderSSID();
+void extract_addrs1(unsigned char *payload, const char *type);
+void extract_addrs2(unsigned char *payload);
+void extract_addrs3(unsigned char *payload);
+void extract_addrs4(unsigned char *payload);
+
+void type_of_addressing(uint_least8_t booleanFlags, unsigned char *payload);
+
 void memory_Initializer();
 int set_Promiscuous();
 void Channel_Swapping();
@@ -227,18 +228,21 @@ void payload_header_extractor(unsigned char *payload){
 
     printf(" ===== NEW NETWORK =====\n");//TODO debug
     uint_least8_t flagsBoolean = 0x00 ;  
-
+    
     extract_protocol(payload, &flagsBoolean);
     extract_type(payload, &flagsBoolean);
     extract_subtype(payload, &flagsBoolean);
+    
     extract_toDs(payload, &flagsBoolean);
+    extract_fromDs(payload, &flagsBoolean);
+    type_of_addressing(flagsBoolean, payload);
+
     extract_retry(payload, &flagsBoolean);
     extract_powerManagement(payload, &flagsBoolean);
     extract_wep(payload, &flagsBoolean);
     extract_order(payload, &flagsBoolean);
-    extract_fromDs(payload, &flagsBoolean);
-    extract_destinationAddress(payload);
-    extract_sourceAddress(payload);
+   
+   
     
     printf("\n===== END OF NETWORK ======\n");//TODO -- debug
 
@@ -278,7 +282,7 @@ void extract_subtype(unsigned char *payload, uint_least8_t *flagsBoolean){
     unsigned char typeMask = 0xF0; 
 
     unsigned char subtype = (frameControlFragment & typeMask) >> 4;
-    if (subtype == 8){ //TODO debuggin filter -> extract to function and refactorize
+    if (validate_beacon(&subtype)){ //TODO debuggin filter -> extract to function and refactorize
         extract_network_name(payload);
     }
     printf("subtype : %X\n", subtype);
@@ -418,16 +422,16 @@ void extract_more_data(unsigned char *payload, uint_least8_t *flagsBoolean)
     
 }
 
-void extract_sourceAddress(unsigned char *payload)
+void extract_addrs1(unsigned char *payload, const char *type)
 {
     
     unsigned char destinationAddress[addresesSize];
     memcpy(destinationAddress, &payload[10], 6);
-    printf("Addres : %02X:%02X:%02X:%02X:%02X:%02X\n", destinationAddress[0], destinationAddress[1], destinationAddress[2],destinationAddress[3], destinationAddress[4] ,destinationAddress[5]);
+    printf("%s : %02X:%02X:%02X:%02X:%02X:%02X\n", type, destinationAddress[0], destinationAddress[1], destinationAddress[2],destinationAddress[3], destinationAddress[4] ,destinationAddress[5]);
     
 }
 
-void extract_destinationAddress(unsigned char *payload)
+void extract_addrs2(unsigned char *payload)
 {
     
     unsigned char destinationAddress[addresesSize];
@@ -436,7 +440,7 @@ void extract_destinationAddress(unsigned char *payload)
     
 }
 
-void extract_BSSID(unsigned char *payload) 
+void extract_addrs3(unsigned char *payload) 
 {
     
     unsigned char BSSID[addresesSize];
@@ -460,7 +464,6 @@ void extract_addrs4(unsigned char *payload) //TODO this is a provitional name. I
 void extract_network_name(unsigned char *payload)
 {
 
-    //validate_beacon();
 
     uint16_t nameLenght = payload[nameLengthbite];
     
@@ -482,7 +485,63 @@ void extract_network_name(unsigned char *payload)
 
 }
 
-void validate_beacon()
+void type_of_addressing(uint_least8_t booleanFlags, unsigned char *payload) //will take a copy of boolean flags and operate over it 
 {
+    uint_least8_t directionAndAddressing = booleanFlags & extractToAndFromMask; 
+                                        //Following is a switch case 
+                                        //that decides what type of comm is to succesfull extract all the information
+                                        //direction addressing is decided following the table found in : unnamedFolder/addresing.svg
+                                        
+    switch(directionAndAddressing){
 
+        case dtlFrames:
+
+            extract_addrs1(payload, "Dest MAC");
+            extract_addrs2(payload);
+            extract_addrs3(payload);
+
+            break;
+
+        case dsToClient:
+
+            extract_addrs1(payload, "Dest MAC");
+            extract_addrs2(payload);
+            extract_addrs3(payload);
+
+            break;
+
+        case clientToDS:
+
+            extract_addrs1(payload, "BBSID");
+            extract_addrs2(payload);
+            extract_addrs3(payload);
+
+            break;
+
+        case bridge: 
+
+            extract_addrs1(payload, "Dest Radio");
+            extract_addrs2(payload);
+            extract_addrs3(payload);
+            extract_addrs4(payload);
+
+
+            break;
+
+        default:
+
+            printf("unknown address type");
+            break;
+        
+
+    }
+}
+
+bool validate_beacon(unsigned char *subtype)
+{   
+
+    if(*subtype == 8){
+        return true;
+    }
+    return false;
 }
