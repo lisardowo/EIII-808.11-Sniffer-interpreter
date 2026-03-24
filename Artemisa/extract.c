@@ -1,12 +1,14 @@
 
 #include <stdio.h>
 #include <string.h>
-
+#include "networkStruct.h"
 #include "validate.h"
 #include "extract.h"
 #include "addressing.h"
 
 #define startTags       36
+
+#define SSID            0x00
 #define DSParameter     0x03
 #define TIM             0x05
 #define BSSLOAD         0x0B
@@ -14,27 +16,14 @@
 #define mobility        0x36
 #define WPALEGACY       0xDD
 
+identified_network testNetwork; //TODO debug -> delete
 //TODO refactorize 2 header files, properly allocate code based in what it does
 
-typedef struct __attribute__((packed)) {
-    uint8_t mac[6];           
-    char ssid[12];            
-    int8_t rssi;              
-    uint8_t channel;          
-    uint32_t last_seen;       
-    uint16_t packet_count;    
-    
-    struct {
-        uint8_t wps_active : 1;
-        uint8_t auth_mode  : 3; 
-        uint8_t pmf_required: 1; 
-        uint8_t is_rogue   : 1; 
-        uint8_t reserved   : 2;
-    } securityFlags;
 
-} identified_network;
 
-void extract_protocol(unsigned char *payload, uint_least8_t *flagsBoolean){
+void extract_protocol(unsigned char *payload, uint_least8_t *flagsBoolean)
+{
+
 
     unsigned char frameControl = payload[0]; //Frame control is from two BYTES (so two fragments)
     unsigned char mask = 0x03; 
@@ -47,7 +36,8 @@ void extract_protocol(unsigned char *payload, uint_least8_t *flagsBoolean){
 
 }
 
-void extract_type(unsigned char *payload, uint_least8_t *flagsBoolean, uint16_t payloadSize){
+void extract_type(unsigned char *payload, uint_least8_t *flagsBoolean, uint16_t payloadSize, identified_network *newNetwork)
+{
 
     
     unsigned char frameControlFragment = payload[0]; //Frame control is from two BYTES (so two fragments)
@@ -57,7 +47,7 @@ void extract_type(unsigned char *payload, uint_least8_t *flagsBoolean, uint16_t 
 
     printf("type : %X\n", frameType);
     
-    frame_type_interpreter(&frameType, payload, payloadSize);
+    frame_type_interpreter(&frameType, payload, payloadSize, newNetwork);
    //TODO debugg
    //TODO if possible id like to use the interpreter OUTSIDE this function
                                                              // , but also wanna avoid returns an stuff due to memory reasons
@@ -76,7 +66,7 @@ void extract_subtype(unsigned char *payload, uint_least8_t *flagsBoolean)
 
     if (validate_network(&subtype))
     { 
-        extract_network_name(payload);
+        //extract_network_name(payload);
     }
     
 
@@ -89,11 +79,9 @@ void extract_toDs(unsigned char *payload, uint_least8_t *flagsBoolean)
     unsigned char mask = 0x01; 
 
     unsigned char toDs = (frameControlFragment & mask) >> normalizeFlagToDs;
-
-    
-    *flagsBoolean |= flagToDs;
-    
-    
+    if(toDs){
+        *flagsBoolean |= flagToDs;
+    }
 
     printf("toDs : %X\n", toDs);
 
@@ -107,8 +95,10 @@ void extract_fromDs(unsigned char *payload, uint_least8_t *flagsBoolean)
 
     unsigned char fromDs = (frameControlFragment & mask) >> normalizeFlagFromDs;
 
-    *flagsBoolean |= flagFromDs;
-    
+    if(fromDs)
+    {
+        *flagsBoolean |= flagFromDs;
+    }
     printf("fromDs : %X\n", fromDs);
 
 }
@@ -121,9 +111,10 @@ void extract_retry(unsigned char *payload, uint_least8_t *flagsBoolean)
 
     unsigned char retry = (frameControlFragment & mask) >> normalizeFlagRetry;
     
-    
-    *flagsBoolean |= flagRetry;
-    
+    if (retry)
+    {
+        *flagsBoolean |= flagRetry;
+    }
 
     printf("extract_retry : %X\n", retry);
     
@@ -137,8 +128,10 @@ void extract_powerManagement(unsigned char *payload, uint_least8_t *flagsBoolean
 
     unsigned char powerManagement = (frameControlFragment & mask) >> normalizeFlagPowerMgmt;
 
-    *flagsBoolean |= flagPowerManagement;
-    
+    if (powerManagement)
+    {
+        *flagsBoolean |= flagPowerManagement;
+    }
     printf("power Management : %X\n", powerManagement);
 
 }
@@ -150,8 +143,11 @@ void extract_wep(unsigned char *payload, uint_least8_t *flagsBoolean)
     unsigned char mask = 0x40; 
 
     unsigned char wep = (frameControlFragment & mask) >> normalizeFlagWep;
-
-    *flagsBoolean |= flagWep;
+    if(wep)
+    {
+        *flagsBoolean |= flagWep;
+    }
+    
     
     printf("WEP : %X\n", wep);    
     
@@ -164,9 +160,10 @@ void extract_order(unsigned char *payload, uint_least8_t *flagsBoolean)
     unsigned char mask = 0x80; 
 
     unsigned char order = (frameControlFragment & mask) >> normalizeFlagOrder;
-
-    *flagsBoolean |= flagOrder;
-    
+    if(order)
+    {
+        *flagsBoolean |= flagOrder;
+    }
     printf("Order : %X\n", order);
     
 }
@@ -179,9 +176,10 @@ void extract_more_frag(unsigned char *payload, uint_least8_t *flagsBoolean)
 
     unsigned char moreFrag = (frameControlFragment & mask) >> normalizeFlagMoreFrag;
 
-    
-    *flagsBoolean |= flagMoreFrag;
-    
+    if(moreFrag)
+    {
+        *flagsBoolean |= flagMoreFrag;
+    }
 
     printf("moreFrag : %X\n", moreFrag);
     
@@ -195,9 +193,10 @@ void extract_more_data(unsigned char *payload, uint_least8_t *flagsBoolean)
 
     unsigned char moreData = (frameControlFragment & mask) >> normalizeFlagMoreData;
 
-    
-    *flagsBoolean |= flagMoreData;
-
+    if(moreData)
+    {
+        *flagsBoolean |= flagMoreData;
+    }
     printf("moreData : %X\n", moreData);
     
 }
@@ -207,6 +206,8 @@ void extract_addrs1(unsigned char *payload, const char *type)
     
     unsigned char destinationAddress[addresesSize];
     memcpy(destinationAddress, &payload[10], 6);
+    
+    //TODO fill mac shall be inside extract_addrs copying destination address instead of payload
     printf("%s : %02X:%02X:%02X:%02X:%02X:%02X\n", type, destinationAddress[0], destinationAddress[1], destinationAddress[2],destinationAddress[3], destinationAddress[4] ,destinationAddress[5]);
     
 }
@@ -214,75 +215,66 @@ void extract_addrs1(unsigned char *payload, const char *type)
 void extract_addrs2(unsigned char *payload, const char *type)
 {
     
-    unsigned char destinationAddress[addresesSize];
-    memcpy(destinationAddress, &payload[4], 6);
-    printf("Addres : %02X:%02X:%02X:%02X:%02X:%02X\n", destinationAddress[0], destinationAddress[1], destinationAddress[2],destinationAddress[3], destinationAddress[4] ,destinationAddress[5]);
+    unsigned char address2[addresesSize];
+    memcpy(address2, &payload[4], 6);
+    printf("%s : %02X:%02X:%02X:%02X:%02X:%02X\n",type, address2[0], address2[1], address2[2],address2[3], address2[4] ,address2[5]);
     
 }
 
 void extract_addrs3(unsigned char *payload, const char *type) 
 {
     
-    unsigned char BSSID[addresesSize];
-    memcpy(BSSID, &payload[16], 6);
-    printf("Addres : %02X:%02X:%02X:%02X:%02X:%02X\n", BSSID[0], BSSID[1], BSSID[2], BSSID[3], BSSID[4] , BSSID[5]);
+    unsigned char addres3[addresesSize];
+    memcpy(addres3, &payload[16], 6);
+    printf("%s : %02X:%02X:%02X:%02X:%02X:%02X\n", type,addres3[0], addres3[1], addres3[2], addres3[3], addres3[4] , addres3[5]);
     
 }
 
 void extract_addrs4(unsigned char *payload, const char *type)
 {
 
-    unsigned char address4[6];
+    unsigned char address4[addresesSize];
     memcpy(address4, &payload[28], 6);
-    printf("Addres : %02X:%02X:%02X:%02X:%02X:%02X\n", address4[0], address4[1], address4[2],address4[3], address4[4] ,address4[5]);
+    printf("%s : %02X:%02X:%02X:%02X:%02X:%02X\n",type, address4[0], address4[1], address4[2],address4[3], address4[4] ,address4[5]);
     
 }
 
-void extract_network_name(unsigned char *payload)
-{
 
-
-    uint16_t nameLenght = payload[nameLengthbite];
-    
-    for(uint8_t i = 0 ; i < nameLenght; i++)
-    {
-        if(i < networkNameMaxLenght) // TODO trying to avoid buffer overflows -> Prob need some work
-        {
-            printf("%c", payload[nameStartBite + i]);
-        } 
-        return;
-    }
-    printf("\n");
-    
-
-}
-
-
-void payload_header_extractor(unsigned char *payload, uint16_t payloadSize){ 
+void payload_header_extractor(unsigned char *payload, uint16_t payloadSize, uint8_t rssi)
+{ 
     
 
     printf(" ===== NEW NETWORK =====\n");
     //TODO debug
     uint_least8_t flagsBoolean = 0x00 ;  
     
-    extract_type(payload, &flagsBoolean, payloadSize);
-    //payload_data_walker(payload, payloadSize);
-
-    /*extract_subtype(payload, &flagsBoolean);
-    extract_protocol(payload, &flagsBoolean);
     extract_toDs(payload, &flagsBoolean);
     extract_fromDs(payload, &flagsBoolean);
-   
-    TODO debuggin sum stuffff
-
-    type_of_addressing(flagsBoolean, payload);
-    extract_retry(payload, &flagsBoolean);
-    extract_powerManagement(payload, &flagsBoolean);
-    extract_wep(payload, &flagsBoolean);
-    extract_order(payload, &flagsBoolean);*/
     
-    printf("\n===== END OF NETWORK ======\n");//TODO -- debug
+    //TODO following this comment youll find the LAMEST patch ever created
+    //im way too tired for this shit
+    //instead of reusing the functions I already worked my ass off ill just re do it here cuz otherwise wont work
+    //ill check that later
+    unsigned char srcMac[macMaxSize];
+    uint_least8_t direction = flagsBoolean & extractToAndFromMask;
+    unsigned char *macAddress = type_of_addressing(direction, payload);
 
+    identified_network *newNetwork = find_network(macAddress);
+
+    uint32_t now = get_time_ms();
+
+    if(newNetwork)
+    {
+        update_network(newNetwork, rssi, now);
+    }
+    else
+    {
+        create_new_network(srcMac, rssi, (unsigned char*)"PlaceHolder name..", 0 , 11);
+        newNetwork = head; 
+    }
+
+    extract_type(payload, &flagsBoolean, payloadSize, newNetwork);
+    //TODO still a lot of stuff to correct
     flagsBoolean = 0x00; 
 
 
@@ -294,87 +286,105 @@ void payload_data_walker(unsigned char *payload, uint16_t totalLenght)
 {
     uint16_t position = startTags;
 
-    while (position < totalLenght)
+    while (position + 2 < totalLenght)
     {
 
-        uint8_t tag_id = payload[position];
-        uint8_t tag_lenght = payload[position + 1];
-
-        switch(tag_id)
+        uint8_t tagId = payload[position];
+        uint8_t tagLenght = payload[position + 1];
+        
+        if ((uint32_t)position + 2u + tagLenght > totalLenght) 
         {
-            case DSParameter:
-                {
-                    unsigned char ds[tag_lenght];
-                    memcpy(ds, &payload[position + 2], tag_lenght);
-                    for(int i = 0 ; i < tag_lenght ; i++)
-                    {
-                        printf("%u ", ds[i]);
-                    }
+            break; 
+        }
+
+        switch(tagId)
+        {
+            
+            case SSID: 
+            {
+                    
+                    fill_ssid(&testNetwork , &payload[position + 2], tagLenght);
+                    
                     printf("\n");
                     break;
+            }
+
+            case DSParameter:
+                {
+                    uint8_t channel = payload[position + 2];
+                    fill_channel(&testNetwork, &channel);
+                    //printf("DS param : ");
+                    break;
                 }
-            case TIM:
+          /* TODO is case tim really needed? 
+          case TIM:
                { 
                     unsigned char tim[tag_lenght] ;
                     memcpy(tim, &payload[position + 2], tag_lenght);
-                    for(int i = 0 ; i < tag_lenght ; i++)
-                    {
-                        printf("%u ", tim[i]);
-                    }
+    
                     printf("\n");
                     break;
-                }
+                }*/
 
             case BSSLOAD:
                 {
-                    unsigned char bss[tag_lenght] ;
-                    memcpy(bss, &payload[position + 2], tag_lenght);
-                    for(int i = 0 ; i < tag_lenght ; i++)
-                    {
-                        printf("%u ", bss[i]);
-                        
-                    }
-                    printf("\n");
+                    uint16_t packetCount = payload[position + ContentTag] | (payload[position + (ContentTag + 1)]) << normalizeSplitTag ;
+                    fill_packetCount(&testNetwork, &packetCount);
                     break;
                 }
+                
             case RSN:
                 {
-                    unsigned char rsn[tag_lenght];
-                    memcpy(rsn, &payload[position + 2], tag_lenght);
-                    for(int i = 0 ; i < tag_lenght ; i++)
-                    {
-                        printf("%u ", rsn[i]);
-                    }
-                    printf("\n");
-                    break;
+                       uint8_t *rsnData = &payload[position + contentTag];
+                        int jumpVersion = 6;
+                        uint16_t pairwiseCipherCount = rsnData[jumpVersion] | (rsnData[jumpVersion + 1] << 8);
+                        uint8_t currentPosition = jumpVersion + contentTag + (pairwiseCipherCount * suiteSelectorsSize);
+                        uint16_t akmCount = rsnData[currentPosition] | ( rsnData[currentPosition + 1] << normalizeSplitTag);
+                        currentPosition += contentTag;
+                        uint8_t *firstAkm = &rsnData[currentPosition];
+                        uint8_t mode = defaultWpaMode;
+
+                        if (firstAkm[suiteType] == 8 || firstAkm[suiteType] == 18)
+                        {
+                            mode = 3;
+                        }
+                        fill_authMode(&testNetwork, &mode);
+
+                        currentPosition += (akmCount * suiteSelectorsSize);
+                        uint16_t rsnCaps = rsnData[currentPosition] | (rsnData[currentPosition + 1] << 8 );
+                        uint8_t pmf = (rsnCaps & normalizePmf) >> 7 ;
+
+                        fill_pmfRequired(&testNetwork, &pmf);
+                        break;
                 }
 
+            /*TODO i think that mobility is also not neccesary
             case mobility:
                 {   
-                    unsigned char mob[tag_lenght];
-                    memcpy(mob, &payload[position + 2], tag_lenght);
-                    for(int i = 0 ; i < tag_lenght ; i++)
+                    unsigned char mob[tagLenght];
+                    memcpy(mob, &payload[position + 2], tagLenght);
+                    printf("Mobility : ");
+                    for(int i = 0 ; i < tagLenght ; i++)
                     {
                         printf("%04X ", mob[i]);
                     }
-                    printf("\n");
+                   printf("\n");
                     break;
-                }
+                }*/
 
             case WPALEGACY:
                 {
-                    unsigned char wpa[tag_lenght];
-                    memcpy(wpa, &payload[position + 2], tag_lenght);
-                    for(int i = 0 ; i < tag_lenght ; i++)
+                    uint8_t *vendor = &payload[position + contentTag];
+                    if (tagLenght >= 4 && vendor[0] == vendorTagPosition1 && vendor[1] == vendorTagPosition2 && vendor[2] == vendorTagPosition3 && vendor[3] == vendorTagPosition4)
                     {
-                        printf("%02X ", wpa[i]);
+                        uint8_t wps = 1;
+                        fill_wpsActive(&testNetwork,&wps);
                     }
-                    printf("\n");
                     break;
                 }
         }
-
-        position += 2 + tag_lenght;
+        
+        position += 2 + tagLenght;
     }
-
+    DEBUGSHOWSTRUCT(&testNetwork);
 }

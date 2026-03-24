@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <inttypes.h>
 #include <stdio.h>
+#include "networkStruct.h"
 
 #define extractToAndFromMask     0x03
 
@@ -17,8 +18,8 @@
 #define dataFrame               2
 
 
-void frame_type_interpreter(uint_least8_t *frameType, unsigned char *payload, uint16_t payloadSize);
-void type_of_addressing(uint_least8_t booleanFlags, unsigned char *payload);
+void frame_type_interpreter(uint_least8_t *frameType, unsigned char *payload, uint16_t payloadSize, identified_network *netNetwork); //TODO identified network do not belong here
+unsigned char* type_of_addressing(uint_least8_t direction, unsigned char *payload);
 
 
 #endif
